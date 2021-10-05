@@ -20,8 +20,6 @@ bool MainWindow::InitObject()
 
 //  First thing is to get the settings.
         pSettings       =   new QSettings("House"  , "GiveTR" ,this);
-//        EditSettings();
-        QSettings::Status temp = pSettings->status();       //  Temp  error check.
         LoadSettings();
 
         stConn.sDriverName      =   "QPSQL";
@@ -31,7 +29,7 @@ bool MainWindow::InitObject()
         stConn.sPort            =   sDBPort;
         stConn.sUserName        =   sDBUser;
         stConn.sPassword        =   sDBPassword;
-//!!!! layout problem and saveing edit record.
+
         pData = new MyDataObject(stConn);
         pData->OpenDb();
 
@@ -71,9 +69,7 @@ bool MainWindow::InitWidgets()
         pTransTable             =   new QTableWidget();
         pTransTable->setColumnCount(4);
         pTransTable->setRowCount(7);
-        QStringList oTemp = {"Date of Last Give" , "Amount Last Given" ,
-                                "Check #" , "Comment"};
-        pTransTable->setHorizontalHeaderLabels(oTemp);
+        FillTransTableHeaders();
         pTransTable->setColumnWidth(1,300);
 
         pAccountList            =   new QListWidget();
@@ -308,7 +304,16 @@ void MainWindow::FillAccountList()
         return;
 }
 
-void MainWindow::FillTransactionTable()
+void MainWindow::FillTransTableHeaders()
+{
+        QStringList oTemp = {"Date of Last Give" , "Amount Last Given" ,
+                            "Check #" , "Comment"};
+        pTransTable->setHorizontalHeaderLabels(oTemp);
+
+        return;
+}
+
+void MainWindow::FillTransTable()
 {
     QString sBuild;
     stResultData stResult;
@@ -318,24 +323,35 @@ void MainWindow::FillTransactionTable()
         sBuild = QString("Select origin_date , amount , check_number , comment"
                             " FROM transaction WHERE account_id = %1")
                                 .arg(iSelectedAccount);
-POUT(sBuild.toStdString());
 
         pData->ReturnQueryData(sBuild.toStdString() , stResult);        //  Get the data.
+        dAccountTotal = 0.0;
 
+        pTransTable->clear();
+        FillTransTableHeaders();
         for(int iIndex = 0 ; iIndex < stResult.iRowsReturned ; iIndex++)
         {
             for(int iIndex_2 = 0 ; iIndex_2 < stResult.iColumnsReturned ; iIndex_2++)
             {
                 sTemp = stResult.vColumns[iIndex][iIndex_2].c_str();
                 if(iIndex_2 == 1)
+                {
                     sTemp = MoneyFormat(sTemp.toStdString()).c_str();   //  Convert to right format for amount.
+                    dAccountTotal += sTemp.toDouble();
+                }
                 pItem = new QTableWidgetItem(sTemp);
+                pItem->setFlags(Qt::NoItemFlags);
                 pItem->setTextAlignment(Qt::AlignRight);                //  For now everything right.
 
                 pItem->setToolTip(pItem->text());
                 pTransTable->setItem(iIndex , iIndex_2 , pItem);
+
             }
         }
+
+        pAccountTotal->setText(std::to_string(dAccountTotal).c_str());
+        if(dAccountTotal != dPreviousTotal)
+            UpdateAccountRecord();
         return;
 }
 
@@ -347,9 +363,10 @@ void MainWindow::FillAccountFields()
         sBuild = QString("SELECT * FROM account WHERE account_id = %1").arg(iSelectedAccount);
         pData->ReturnQueryData(sBuild.toStdString() , stResult);
 
-        pAccountName->setText(stResult.vColumns[0][1].c_str());
-        pAccountDesc->setText(stResult.vColumns[0][2].c_str());
-        pAccountTotal->setText(stResult.vColumns[0][4].c_str());
+        pAccountName->setText(stResult.vColumns[0][1].c_str());         //  Name.
+        pAccountDesc->setText(stResult.vColumns[0][2].c_str());         //  Deascription.
+        pAccountTotal->setText(stResult.vColumns[0][4].c_str());        //  Total Given.
+        dPreviousTotal = pAccountTotal->text().toDouble();
 
         return;
 }
@@ -383,9 +400,11 @@ bool MainWindow::UpdateAccountRecord()
 //  Escape single quotes.
         QString sName       =   QString(pAccountName->text()).replace("'","''");
         QString sDesc       =   QString(pAccountDesc->toPlainText()).replace("'","''");
+        QString sTotal      =   QString(pAccountTotal->text());
 
         sBuild = "UPDATE account SET name ='" + sName;
-        sBuild += " ' , description = '" + sDesc + "'";
+        sBuild += " ' , description = '" + sDesc + "', ";
+        sBuild += "total_given = " + sTotal + " ";
         sBuild += QString(" WHERE account_id = %1").arg(iSelectedAccount);
 POUT(sBuild.toStdString());
 
@@ -407,6 +426,8 @@ bool MainWindow::WriteNewTransactionRecord()
         QString sAmount         =   pAmount->text();
         QString sComment        =   pComment->toPlainText();
         QString sCheck_Number   =   pCheckNumber->text();
+        if(sCheck_Number.isEmpty())
+            sCheck_Number = "0";
 
         sBuild = "INSERT INTO transaction "
                     "(origin_date , amount , how_paid , check_number , "
@@ -415,10 +436,8 @@ bool MainWindow::WriteNewTransactionRecord()
                                 + sCheck_Number + "','" + sComment;
         sBuild += QString("' , %1 )").arg(iSelectedAccount);
 
-POUT(sBuild.toStdString());
-
         pData->SendDatabaseQuery(sBuild.toStdString());
-
+        FillTransTable();
         return true;
 }
 
@@ -459,18 +478,7 @@ bool MainWindow::NewAccount()
 
 void MainWindow::AccountListDoubleClicked(QListWidgetItem * pItem)
 {
-        sSelectedAccount = pItem->text().toStdString();
-
-        for(auto & it : vAccounts)
-            if(it.sKeyString == sSelectedAccount)
-            {
-                iSelectedAccount = it.iKey;
-                pPayeeLabel->setText(sSelectedAccount.c_str());
-                bEditFlag.SetTrue();                //  Tells us an edit is going on.
-                EnableFields();
-                FillAccountFields();
-                break;
-            }
+        AccountListClicked(pItem);
         return;
 }
 
@@ -483,7 +491,11 @@ void MainWindow::AccountListClicked(QListWidgetItem * pItem)
             if(it.sKeyString == sSelectedAccount)
             {
                 iSelectedAccount = it.iKey;
-                 FillTransactionTable();
+                pPayeeLabel->setText(sSelectedAccount.c_str());
+                bEditFlag.SetTrue();                //  Tells us an edit is going on.
+                EnableFields();
+                FillAccountFields();
+                FillTransTable();
                 break;
             }
         return;

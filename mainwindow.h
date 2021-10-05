@@ -46,10 +46,11 @@ private:
     void                    ClearAccountFields();
     void                    ClearTransFields();
     void                    FillAccountFields();
+    void                    FillTransTableHeaders();
 
 //  Other member functions.
     void                    FillAccountList();
-    void                    FillTransactionTable();
+    void                    FillTransTable();
     bool                    WriteNewAccountRecord();
     bool                    WriteNewTransactionRecord();
     bool                    UpdateAccountRecord();
@@ -70,6 +71,10 @@ private:
     std::string sDBPort;
     std::string sDBUser;
     std::string sDBPassword;
+
+    double      dPreviousTotal = 0.0;               //  Used to compare in case record not correct.
+    double      dAccountTotal = 0.0;                //  Used to hold account total.
+                                                    //  Redo every time.
 
     QRect       * pScreenRect;                      //  Screen and Window stuff.
     QScreen     * pScreen;
